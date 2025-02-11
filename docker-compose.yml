@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+
+  ###############
+  # kafka #
+  ###############
+
+  # Project container
+  broker:
+    image: apache/kafka:latest
+    container_name: broker
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://broker:9092,CONTROLLER://broker:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    ports:
+      - 9092:9092
+      - 9093:9093
+    restart: always
+
+  python-app:
+    build:
+      context: .  
+      dockerfile: ./docker/python-3.11/Dockerfile
+    container_name: python-app
+    volumes:
+      - ./src:/src
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077  # Spark master URL
+      - POSTGRES_HOST=postgres  # PostgreSQL host
+      - KAFKA_BROKER=broker:9092  # Kafka broker address
+    depends_on:
+      - broker
+      - spark-master
+      - postgres
+    restart: on-failure
+
+  postgres:
+    build: ./docker/postgres-17
+    container_name: postgres-17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    ports:
+      - "4040:4040/tcp" # Spark UI
+      - "8082:8080/tcp" # Spark Master Web UI
+      - "7077:7077" # Spark Master
+    volumes:
+      - ./docker/bitnami-spark/home:/workspace
+      - ./docker/bitnami-spark/spark-logs:/opt/bitnami/spark/logs
+    working_dir: /workspace
+    environment:
+      SPARK_USER: spark
+      SPARK_NO_DAEMONIZE: no
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_HOME: /opt/bitnami/spark
+      SPARK_MODE: master
+    depends_on:
+      - broker
+      - postgres
+
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark-worker
+    environment:
+      SPARK_MODE: worker
+      SPARK_WORKER_MEMORY: 1G #<--- adjust accordingly
+      SPARK_WORKER_CORES: 2
+      SPARK_NO_DAEMONIZE: no
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
+    ##############################
+    #    NETWORKS DOCKS CONFIG   #
+    ##############################
+    # for VPN IPs conflict
+    #
+    # https://docs.docker.com/compose/compose-file/#ipam
+networks:
+  default:
+    driver: "bridge"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.247.0.0/16

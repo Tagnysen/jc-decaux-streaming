@@ -1,0 +1,5 @@
+findspark
+kafka-python
+py4j
+pyspark
+spark

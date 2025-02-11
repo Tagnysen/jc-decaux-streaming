@@ -1,0 +1,1 @@
+/home/jpkaptue/Téléchargements/kafka-3.9.0-src/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic velib-stations
